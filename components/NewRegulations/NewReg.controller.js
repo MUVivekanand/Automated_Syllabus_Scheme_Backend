@@ -86,6 +86,21 @@ const deleteMoveCourse = async (req, res) => {
       return res.status(400).json({ message: "Course name, degree, and department are required" });
     }
 
+    // FETCH the course first to get ca_marks, fe_marks, total_marks
+    const { data: existingCourse, error: fetchError } = await supabase
+      .from("credits")
+      .select("ca_marks, fe_marks, total_marks")
+      .eq("course_name", course_name)
+      .eq("degree", degree)
+      .eq("department", department)
+      .single();
+
+    if (fetchError) {
+      console.error("Error fetching course for deletion:", fetchError);
+      throw fetchError;
+    }
+
+    // Now delete the course
     const { data, error } = await supabase
       .from("credits")
       .delete()
@@ -98,7 +113,12 @@ const deleteMoveCourse = async (req, res) => {
       throw error;
     }
 
-    res.json({ message: "Course deleted successfully!", data });
+    // Return the deleted course data including marks
+    res.json({ 
+      message: "Course deleted successfully!", 
+      data,
+      preservedMarks: existingCourse // Send back the marks to be used in frontend
+    });
   } catch (error) {
     console.error("Error deleting course:", error);
     res.status(500).json({ message: "Error deleting course", error: error.message });
@@ -121,12 +141,10 @@ const addCourse = async (req, res) => {
     });
   }
 
-  // Validate marks fields
-  if (newCourse.ca_marks == null || newCourse.fe_marks == null || newCourse.total_marks == null) {
-    return res.status(400).json({ 
-      message: "Missing required fields. Please ensure ca_marks, fe_marks, and total_marks are provided." 
-    });
-  }
+  // RELAXED VALIDATION: Only check if marks are missing, fetch from existing course
+  const marksProvided = newCourse.ca_marks != null && 
+                        newCourse.fe_marks != null && 
+                        newCourse.total_marks != null;
 
   try {
     // Check if a course with the same composite key exists
@@ -148,6 +166,33 @@ const addCourse = async (req, res) => {
       });
     }
 
+    // If marks not provided, try to fetch from another course with same name
+    let ca_marks = newCourse.ca_marks;
+    let fe_marks = newCourse.fe_marks;
+    let total_marks = newCourse.total_marks;
+
+    if (!marksProvided) {
+      const { data: similarCourse, error: similarError } = await supabase
+        .from("credits")
+        .select("ca_marks, fe_marks, total_marks")
+        .eq("course_name", newCourse.course_name.trim())
+        .eq("degree", newCourse.degree)
+        .limit(1)
+        .single();
+
+      if (!similarError && similarCourse) {
+        ca_marks = similarCourse.ca_marks;
+        fe_marks = similarCourse.fe_marks;
+        total_marks = similarCourse.total_marks;
+        console.log("Using marks from existing course with same name:", similarCourse);
+      } else {
+        // If still no marks found, use defaults
+        ca_marks = ca_marks ?? 0;
+        fe_marks = fe_marks ?? 0;
+        total_marks = total_marks ?? 0;
+      }
+    }
+
     // Prepare the course data
     const courseToInsert = {
       ...newCourse,
@@ -161,7 +206,10 @@ const addCourse = async (req, res) => {
       faculty: newCourse.faculty || '',
       category: newCourse.category || '',
       serial_no: newCourse.serial_no || 0,
-      sem_no: newCourse.sem_no || 1
+      sem_no: newCourse.sem_no || 1,
+      ca_marks,
+      fe_marks,
+      total_marks
     };
 
     const { data, error } = await supabase
