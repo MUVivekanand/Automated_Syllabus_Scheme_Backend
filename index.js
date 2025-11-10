@@ -35,3 +35,9 @@ const PORT = 4000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+app.use((err, req, res, next) => {
+  console.error("Internal Server Error:", err.stack);
+  res.status(500).json({ error: "Internal Server Error", details: err.message });
+});
+
