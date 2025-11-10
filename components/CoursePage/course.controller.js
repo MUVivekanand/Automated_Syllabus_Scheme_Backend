@@ -181,31 +181,81 @@ const updateCourse = async (req, res) => {
 const deleteCourse = async (req, res) => {
   try {
     const { course_name } = req.params;
+    const { degree, department } = req.query; // Get from query params
     
-    // Get the course_code before deleting
+    const decodedCourseName = decodeURIComponent(course_name);
+    
+    console.log("Attempting to delete course:", { 
+      course_name: decodedCourseName, 
+      degree, 
+      department 
+    });
+    
+    // Validate all required fields
+    if (!degree || !department) {
+      return res.status(400).json({ 
+        message: "Missing required parameters: degree and department are required" 
+      });
+    }
+    
+    // Get the course_code before deleting - use all three PK fields
     const { data: course, error: fetchError } = await supabase
       .from("credits")
       .select("course_code")
-      .eq("course_name", course_name)
-      .single();
+      .eq("course_name", decodedCourseName)
+      .eq("degree", degree)
+      .eq("department", department)
+      .maybeSingle();
       
-    if (fetchError) throw fetchError;
+    if (fetchError) {
+      console.error("Fetch error:", fetchError);
+      return res.status(500).json({ 
+        message: "Database fetch error", 
+        error: fetchError.message 
+      });
+    }
+    
+    if (!course) {
+      return res.status(404).json({ 
+        message: "Course not found",
+        details: { course_name: decodedCourseName, degree, department }
+      });
+    }
     
     // Handle course_details relationship first
-    await updateOrDeleteCourseDetails(course.course_code);
+    try {
+      await updateOrDeleteCourseDetails(course.course_code);
+    } catch (detailsError) {
+      console.error("Error updating course details:", detailsError);
+      return res.status(500).json({ 
+        message: "Failed to update course details", 
+        error: detailsError.message 
+      });
+    }
     
-    // Then delete from credits table
+    // Delete from credits table using all three PK fields
     const { error: deleteError } = await supabase
       .from("credits")
       .delete()
-      .eq("course_name", course_name);
+      .eq("course_name", decodedCourseName)
+      .eq("degree", degree)
+      .eq("department", department);
       
-    if (deleteError) throw deleteError;
+    if (deleteError) {
+      console.error("Delete error:", deleteError);
+      return res.status(500).json({ 
+        message: "Failed to delete from database", 
+        error: deleteError.message 
+      });
+    }
     
     res.status(200).json({ message: "Course deleted successfully!" });
   } catch (error) {
-    console.error("Error deleting course:", error);
-    res.status(500).json({ message: "Failed to delete course", error: error.message });
+    console.error("Unexpected error deleting course:", error);
+    res.status(500).json({ 
+      message: "Unexpected error occurred", 
+      error: error.message 
+    });
   }
 };
 
