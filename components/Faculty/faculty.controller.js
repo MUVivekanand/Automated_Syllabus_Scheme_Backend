@@ -15,7 +15,7 @@ const updateCourseDetails = async (req, res) => {
       outcomes,
     } = req.body;
 
-    // ✅ 1. Check if course exists in `course_details`
+    // Check if the course exists in `course_details` using composite key
     const { data: existingCourse, error: fetchError } = await supabase
       .from("course_details")
       .select("course_name")
@@ -31,6 +31,7 @@ const updateCourseDetails = async (req, res) => {
     }
 
     if (existingCourse.length > 0) {
+      // ✅ Update existing course outcomes in `course_details`
       const { error: updateError } = await supabase
         .from("course_details")
         .update({
@@ -48,15 +49,17 @@ const updateCourseDetails = async (req, res) => {
         .eq("course_name", courseName)
         .eq("degree", degree)
         .eq("department", department);
+
       if (updateError) throw updateError;
     } else {
+      // ✅ Insert new course outcomes in `course_details`
       const { error: insertError } = await supabase
         .from("course_details")
         .insert({
           course_name: courseName,
           course_code: courseCode,
-          degree,
-          department,
+          degree: degree,
+          department: department,
           co1_name: coDetails[0]?.name || null,
           co1_desc: coDetails[0]?.desc || null,
           co2_name: coDetails[1]?.name || null,
@@ -68,16 +71,18 @@ const updateCourseDetails = async (req, res) => {
           co5_name: coDetails[4]?.name || null,
           co5_desc: coDetails[4]?.desc || null,
         });
+
       if (insertError) throw insertError;
     }
 
-    // ✅ 2. Update or insert `timings`
+    // ✅ Update Timings (Hours) in `timings` table using composite key
     const { data: existingTimings, error: checkError } = await supabase
       .from("timings")
       .select("course_name")
       .eq("course_name", courseName)
       .eq("degree", degree)
       .eq("department", department);
+
     if (checkError) throw checkError;
 
     if (existingTimings.length > 0) {
@@ -103,6 +108,7 @@ const updateCourseDetails = async (req, res) => {
         .eq("course_name", courseName)
         .eq("degree", degree)
         .eq("department", department);
+
       if (updateTimingsError) throw updateTimingsError;
     } else {
       const { error: insertTimingsError } = await supabase
@@ -110,8 +116,8 @@ const updateCourseDetails = async (req, res) => {
         .insert({
           course_name: courseName,
           course_code: courseCode,
-          degree,
-          department,
+          degree: degree,
+          department: department,
           hour1_1: hours[0]?.hour1 || null,
           hour2_1: hours[0]?.hour2 || null,
           hour1_2: hours[1]?.hour1 || null,
@@ -128,19 +134,41 @@ const updateCourseDetails = async (req, res) => {
           outcome4: outcomes[3] || null,
           outcome5: outcomes[4] || null,
         });
+
       if (insertTimingsError) throw insertTimingsError;
     }
 
-    // ✅ 3. Handle `textbooks` and `refs` safely using UPSERT
-    // Assuming composite PK: (course_name, degree, department, title)
+    // ✅ TEXTBOOKS: Fetch existing, delete all, insert fresh with sequential IDs
+    const { data: existingTextbooks } = await supabase
+      .from("textbooks")
+      .select("id, course_name, degree, department")
+      .eq("course_name", courseName)
+      .eq("degree", degree)
+      .eq("department", department);
 
-    // --- Textbooks ---
+    // Delete all existing textbooks for this course (match ALL composite key parts)
+    if (existingTextbooks && existingTextbooks.length > 0) {
+      for (const book of existingTextbooks) {
+        await supabase
+          .from("textbooks")
+          .delete()
+          .match({ 
+            id: book.id, 
+            course_name: book.course_name, 
+            degree: book.degree, 
+            department: book.department 
+          });
+      }
+    }
+
+    // Insert new textbooks with fresh sequential IDs starting from 1
     if (Array.isArray(textbooks) && textbooks.length > 0) {
-      const textbookData = textbooks.map((t) => ({
+      const textbookData = textbooks.map((t, index) => ({
+        id: index + 1, // Sequential ID starting from 1
         course_name: courseName,
         course_code: courseCode,
-        degree,
-        department,
+        degree: degree,
+        department: department,
         title: t.title || "Unknown Title",
         author: t.author || "Unknown Author",
         publisher: t.publisher || "N/A",
@@ -150,20 +178,45 @@ const updateCourseDetails = async (req, res) => {
 
       const { error: textbookError } = await supabase
         .from("textbooks")
-        .upsert(textbookData, {
-          onConflict: ["course_name", "degree", "department", "title"], // ✅ Use composite PK
-        });
-
-      if (textbookError) throw textbookError;
+        .insert(textbookData);
+      
+      if (textbookError) {
+        console.error("❌ Error inserting textbooks:", textbookError);
+        throw textbookError;
+      }
     }
 
-    // --- References ---
+    // ✅ REFERENCES: Same logic
+    const { data: existingRefs } = await supabase
+      .from("refs")
+      .select("id, course_name, degree, department")
+      .eq("course_name", courseName)
+      .eq("degree", degree)
+      .eq("department", department);
+
+    // Delete all existing references for this course (match ALL composite key parts)
+    if (existingRefs && existingRefs.length > 0) {
+      for (const ref of existingRefs) {
+        await supabase
+          .from("refs")
+          .delete()
+          .match({ 
+            id: ref.id, 
+            course_name: ref.course_name, 
+            degree: ref.degree, 
+            department: ref.department 
+          });
+      }
+    }
+
+    // Insert new references with fresh sequential IDs starting from 1
     if (Array.isArray(references) && references.length > 0) {
-      const referenceData = references.map((r) => ({
+      const referenceData = references.map((r, index) => ({
+        id: index + 1, // Sequential ID starting from 1
         course_name: courseName,
         course_code: courseCode,
-        degree,
-        department,
+        degree: degree,
+        department: department,
         title: r.title || "Unknown Title",
         author: r.author || "Unknown Author",
         publisher: r.publisher || "N/A",
@@ -173,20 +226,21 @@ const updateCourseDetails = async (req, res) => {
 
       const { error: referenceError } = await supabase
         .from("refs")
-        .upsert(referenceData, {
-          onConflict: ["course_name", "degree", "department", "title"], // ✅ Use composite PK
-        });
-
-      if (referenceError) throw referenceError;
+        .insert(referenceData);
+      
+      if (referenceError) {
+        console.error("❌ Error inserting references:", referenceError);
+        throw referenceError;
+      }
     }
 
-    // ✅ 4. Respond success
     res.json({ success: true });
   } catch (err) {
     console.error("❌ Server Error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 };
+
 
 // Get courses by faculty
 const getCourse = async (req, res) => {
