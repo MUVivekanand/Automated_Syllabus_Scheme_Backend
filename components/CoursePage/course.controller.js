@@ -44,6 +44,24 @@ const getSemesterInfo = async (req, res) => {
   }
 };
 
+const getDepartments = async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("credits")
+      .select("department", { distinct: true })
+      .not("department", "is", null);
+
+    if (error) throw error;
+
+    // Extract unique department names
+    const departments = [...new Set(data.map(item => item.department))];
+    res.status(200).json({ success: true, data: departments });
+  } catch (err) {
+    console.error("Error fetching departments:", err);
+    res.status(500).json({ success: false, message: "Failed to fetch departments" });
+  }
+};
+
 
 // Helper function to handle course details relationships
 const updateOrDeleteCourseDetails = async (oldCourseCode, newCourseCode = null) => {
@@ -303,5 +321,6 @@ module.exports = {
   updateCourse,
   getTableData,
   getCourses,
-  deleteCourse
+  deleteCourse,
+  getDepartments
 };

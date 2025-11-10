@@ -5,6 +5,7 @@ const {
   getTableData,
   getCourses,
   deleteCourse,
+  getDepartments
 } = require("./course.controller");
 
 const {
@@ -21,6 +22,7 @@ router.patch("/credits/:course_name", updateCourse);
 router.get("/getTableData", getTableData);
 router.get("/courses/:semNo", getCourses);
 router.delete("/credits/:course_name", deleteCourse);
+router.get("/departments", getDepartments);
 
 // New routes for CourseWord functionality
 router.get("/getAllSemestersData", getAllSemestersData);
