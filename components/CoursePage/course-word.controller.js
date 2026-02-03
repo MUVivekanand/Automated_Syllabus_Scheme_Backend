@@ -6,46 +6,94 @@ const path = require("path");
 
 
 // Get data for all semesters
+// const getAllSemestersData = async (req, res) => {
+//   try {
+//     const allSemestersData = [];
+    
+//     // Fetch data for each semester (1-8)
+//     for (let semNo = 1; semNo <= 8; semNo++) {
+//       // Get semester info
+//       const { data: semInfo, error: semInfoError } = await supabase
+//         .from("seminfo")
+//         .select("*")
+//         .eq("sem_no", semNo)
+//         .single();
+      
+//       if (semInfoError) throw semInfoError;
+      
+//       // Get courses for this semester
+//       const { data: courses, error: coursesError } = await supabase
+//         .from("credits")
+//         .select("*")
+//         .eq("sem_no", semNo)
+//         .order("serial_no");
+      
+//       if (coursesError) throw coursesError;
+      
+//       allSemestersData.push({
+//         semNo,
+//         semInfo: {
+//           ...semInfo,
+//           mandatory_courses: semInfo.mandatory_courses || 0
+//         },
+//         courses
+//       });
+//     }
+    
+//     res.json(allSemestersData);
+//   } catch (error) {
+//     console.error("Error fetching all semesters data:", error);
+//     res.status(500).json({ error: "Failed to fetch all semesters data" });
+//   }
+// };
+
 const getAllSemestersData = async (req, res) => {
   try {
+    const { degree, department } = req.query;
+
+    if (!degree || !department) {
+      return res.status(400).json({
+        error: "degree and department are required",
+      });
+    }
+
     const allSemestersData = [];
-    
-    // Fetch data for each semester (1-8)
+
     for (let semNo = 1; semNo <= 8; semNo++) {
-      // Get semester info
       const { data: semInfo, error: semInfoError } = await supabase
         .from("seminfo")
         .select("*")
         .eq("sem_no", semNo)
+        .eq("degree", degree)
+        .eq("department", department)
         .single();
-      
+
       if (semInfoError) throw semInfoError;
-      
-      // Get courses for this semester
+
       const { data: courses, error: coursesError } = await supabase
         .from("credits")
         .select("*")
         .eq("sem_no", semNo)
+        .eq("degree", degree)
+        .eq("department", department)
         .order("serial_no");
-      
+
       if (coursesError) throw coursesError;
-      
+
       allSemestersData.push({
         semNo,
-        semInfo: {
-          ...semInfo,
-          mandatory_courses: semInfo.mandatory_courses || 0
-        },
-        courses
+        semInfo,
+        courses,
       });
     }
-    
+
     res.json(allSemestersData);
   } catch (error) {
-    console.error("Error fetching all semesters data:", error);
-    res.status(500).json({ error: "Failed to fetch all semesters data" });
+    console.error("getAllSemestersData error:", error);
+    res.status(500).json({ error: "Failed to fetch semesters data" });
   }
 };
+
 
 // Export all courses data to Word document
 const exportToWord = async (req, res) => {
