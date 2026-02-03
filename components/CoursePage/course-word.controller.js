@@ -57,39 +57,46 @@ const getAllSemestersData = async (req, res) => {
       });
     }
 
-    const allSemestersData = [];
+    // 1️⃣ Fetch ALL seminfo at once
+    const { data: semInfoData, error: semInfoError } = await supabase
+      .from("seminfo")
+      .select("*")
+      .eq("degree", degree)
+      .eq("department", department)
+      .order("sem_no");
 
-    for (let semNo = 1; semNo <= 8; semNo++) {
-      const { data: semInfo, error: semInfoError } = await supabase
-        .from("seminfo")
-        .select("*")
-        .eq("sem_no", semNo)
-        .eq("degree", degree)
-        .eq("department", department)
-        .single();
+    if (semInfoError) throw semInfoError;
 
-      if (semInfoError) throw semInfoError;
+    // 2️⃣ Fetch ALL credits at once
+    const { data: creditsData, error: creditsError } = await supabase
+      .from("credits")
+      .select("*")
+      .eq("degree", degree)
+      .eq("department", department)
+      .order("sem_no")
+      .order("serial_no");
 
-      const { data: courses, error: coursesError } = await supabase
-        .from("credits")
-        .select("*")
-        .eq("sem_no", semNo)
-        .eq("degree", degree)
-        .eq("department", department)
-        .order("serial_no");
+    if (creditsError) throw creditsError;
 
-      if (coursesError) throw coursesError;
+    // 3️⃣ Group courses by semester
+    const coursesBySem = {};
+    creditsData.forEach(course => {
+      if (!coursesBySem[course.sem_no]) {
+        coursesBySem[course.sem_no] = [];
+      }
+      coursesBySem[course.sem_no].push(course);
+    });
 
-      allSemestersData.push({
-        semNo,
-        semInfo,
-        courses,
-      });
-    }
+    // 4️⃣ Build final structure
+    const result = semInfoData.map(sem => ({
+      semNo: sem.sem_no,
+      semInfo: sem,
+      courses: coursesBySem[sem.sem_no] || [],
+    }));
 
-    res.json(allSemestersData);
+    res.json(result);
   } catch (error) {
-    console.error("getAllSemestersData error:", error);
+    console.error("getAllSemestersData failed:", error);
     res.status(500).json({ error: "Failed to fetch semesters data" });
   }
 };
@@ -569,125 +576,220 @@ function createCourseRow(course, serialNo) {
 // };
 
 
+// const courseDetailsInfo = async (req, res) => {
+//   try {
+//     const { department, degree } = req.query;
+
+//     if (!department || !degree) {
+//       return res.status(400).json({ error: "Department and degree parameters are required" });
+//     }
+
+//     // Query regular courses
+//     const { data, error } = await supabase
+//       .from("credits")
+//       .select(`
+//         sem_no,
+//         serial_no,
+//         course_name,
+//         course_details:course_details(*),
+//         textbooks:textbooks(*),
+//         references:refs(*)
+//       `)
+//       .eq("department", department)
+//       .eq("degree", degree)
+//       .order("sem_no", { ascending: true })
+//       .order("serial_no", { ascending: true });
+
+//     if (error) {
+//       console.error("Error fetching filtered courses:", error);
+//       return res.status(500).json({ error: "Internal Server Error" });
+//     }
+
+//     // Query lab courses
+//     const { data: labData, error: labError } = await supabase
+//       .from("labcourse_details")
+//       .select("*")
+//       .eq("department", department)
+//       .eq("degree", degree);
+
+//     if (labError) {
+//       console.error("Error fetching lab courses:", labError);
+//       return res.status(500).json({ error: "Internal Server Error" });
+//     }
+
+//     const courseDetailsMap = {};
+
+//     // Process regular course data
+//     for (const course of data) {
+//       // Fetch timing data
+//       const { data: timingData, error: timingError } = await supabase
+//         .from("timings")
+//         .select("*")
+//         .eq("course_name", course.course_name)
+//         .single();
+
+//       if (timingError && timingError.code !== "PGRST116") {
+//         console.error(`Error fetching timing data for ${course.course_name}:`, timingError);
+//       }
+
+//       courseDetailsMap[course.course_name] = {
+//         co: course.course_details || [],
+//         hours: timingData
+//           ? {
+//               lecture: [
+//                 timingData.hour1_1,
+//                 timingData.hour1_2,
+//                 timingData.hour1_3,
+//                 timingData.hour1_4,
+//                 timingData.hour1_5
+//               ],
+//               tutorial: [
+//                 timingData.hour2_1,
+//                 timingData.hour2_2,
+//                 timingData.hour2_3,
+//                 timingData.hour2_4,
+//                 timingData.hour2_5
+//               ],
+//               outcomes: [
+//                 timingData.outcome1,
+//                 timingData.outcome2,
+//                 timingData.outcome3,
+//                 timingData.outcome4,
+//                 timingData.outcome5
+//               ],
+//               total: timingData.total_hours
+//             }
+//           : null,
+//         textbooks: course.textbooks || [],
+//         references: course.references || [],
+//         isLabCourse: false
+//       };
+//     }
+
+//     // Add lab courses to the map along with references
+//     for (const labCourse of labData) {
+//       // Fetch references for lab courses
+//       const { data: labReferences, error: labRefError } = await supabase
+//         .from("refs")
+//         .select("*")
+//         .eq("course_name", labCourse.course_name)
+//         .eq("degree", labCourse.degree)
+//         .eq("department", labCourse.department);
+
+//       if (labRefError) {
+//         console.error(`Error fetching references for lab course ${labCourse.course_name}:`, labRefError);
+//       }
+
+//       courseDetailsMap[labCourse.course_name] = {
+//         description: labCourse.description,
+//         references: labReferences || [], // Adding references
+//         isLabCourse: true
+//       };
+//     }
+
+//     // console.log(courseDetailsMap);
+//     res.json(courseDetailsMap);
+//   } catch (err) {
+//     console.error("Unexpected error:", err);
+//     res.status(500).json({ error: "Internal Server Error" });
+//   }
+// };
+
 const courseDetailsInfo = async (req, res) => {
   try {
-    const { department, degree } = req.query;
+    const { degree, department } = req.query;
 
-    if (!department || !degree) {
-      return res.status(400).json({ error: "Department and degree parameters are required" });
+    if (!degree || !department) {
+      return res.status(400).json({
+        error: "degree and department are required",
+      });
     }
 
-    // Query regular courses
-    const { data, error } = await supabase
+    // 1️⃣ Fetch all regular courses + relations
+    const { data: courses, error } = await supabase
       .from("credits")
       .select(`
-        sem_no,
-        serial_no,
         course_name,
         course_details:course_details(*),
         textbooks:textbooks(*),
         references:refs(*)
       `)
-      .eq("department", department)
       .eq("degree", degree)
-      .order("sem_no", { ascending: true })
-      .order("serial_no", { ascending: true });
+      .eq("department", department);
 
-    if (error) {
-      console.error("Error fetching filtered courses:", error);
-      return res.status(500).json({ error: "Internal Server Error" });
-    }
+    if (error) throw error;
 
-    // Query lab courses
+    // 2️⃣ Collect course names
+    const courseNames = courses.map(c => c.course_name);
+
+    // 3️⃣ Fetch ALL timings in ONE query
+    const { data: timings, error: timingsError } = await supabase
+      .from("timings")
+      .select("*")
+      .in("course_name", courseNames);
+
+    if (timingsError) throw timingsError;
+
+    // 4️⃣ Map timings by course name
+    const timingsMap = {};
+    timings.forEach(t => {
+      timingsMap[t.course_name] = t;
+    });
+
+    // 5️⃣ Fetch ALL lab courses in ONE query
     const { data: labData, error: labError } = await supabase
       .from("labcourse_details")
       .select("*")
-      .eq("department", department)
-      .eq("degree", degree);
+      .eq("degree", degree)
+      .eq("department", department);
 
-    if (labError) {
-      console.error("Error fetching lab courses:", labError);
-      return res.status(500).json({ error: "Internal Server Error" });
-    }
+    if (labError) throw labError;
 
+    const labMap = {};
+    labData.forEach(lab => {
+      labMap[lab.course_name] = lab;
+    });
+
+    // 6️⃣ Build final response
     const courseDetailsMap = {};
 
-    // Process regular course data
-    for (const course of data) {
-      // Fetch timing data
-      const { data: timingData, error: timingError } = await supabase
-        .from("timings")
-        .select("*")
-        .eq("course_name", course.course_name)
-        .single();
-
-      if (timingError && timingError.code !== "PGRST116") {
-        console.error(`Error fetching timing data for ${course.course_name}:`, timingError);
-      }
+    for (const course of courses) {
+      const timing = timingsMap[course.course_name];
 
       courseDetailsMap[course.course_name] = {
         co: course.course_details || [],
-        hours: timingData
+        hours: timing
           ? {
               lecture: [
-                timingData.hour1_1,
-                timingData.hour1_2,
-                timingData.hour1_3,
-                timingData.hour1_4,
-                timingData.hour1_5
+                timing.hour1_1,
+                timing.hour1_2,
+                timing.hour1_3,
+                timing.hour1_4,
+                timing.hour1_5,
               ],
               tutorial: [
-                timingData.hour2_1,
-                timingData.hour2_2,
-                timingData.hour2_3,
-                timingData.hour2_4,
-                timingData.hour2_5
+                timing.hour2_1,
+                timing.hour2_2,
+                timing.hour2_3,
+                timing.hour2_4,
+                timing.hour2_5,
               ],
-              outcomes: [
-                timingData.outcome1,
-                timingData.outcome2,
-                timingData.outcome3,
-                timingData.outcome4,
-                timingData.outcome5
-              ],
-              total: timingData.total_hours
+              total: timing.total_hours,
             }
           : null,
         textbooks: course.textbooks || [],
         references: course.references || [],
-        isLabCourse: false
+        isLabCourse: !!labMap[course.course_name],
+        description: labMap[course.course_name]?.description || null,
       };
     }
 
-    // Add lab courses to the map along with references
-    for (const labCourse of labData) {
-      // Fetch references for lab courses
-      const { data: labReferences, error: labRefError } = await supabase
-        .from("refs")
-        .select("*")
-        .eq("course_name", labCourse.course_name)
-        .eq("degree", labCourse.degree)
-        .eq("department", labCourse.department);
-
-      if (labRefError) {
-        console.error(`Error fetching references for lab course ${labCourse.course_name}:`, labRefError);
-      }
-
-      courseDetailsMap[labCourse.course_name] = {
-        description: labCourse.description,
-        references: labReferences || [], // Adding references
-        isLabCourse: true
-      };
-    }
-
-    // console.log(courseDetailsMap);
     res.json(courseDetailsMap);
-  } catch (err) {
-    console.error("Unexpected error:", err);
-    res.status(500).json({ error: "Internal Server Error" });
+  } catch (error) {
+    console.error("courseDetailsInfo failed:", error);
+    res.status(500).json({ error: "Failed to fetch course details" });
   }
 };
-
 
 
 
