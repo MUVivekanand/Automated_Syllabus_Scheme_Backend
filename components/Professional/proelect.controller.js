@@ -79,6 +79,9 @@ const getProfessional = async (req, res) => {
 
 
 
+
+
+
 const getCoursesElectiveAll = async(req,res) => {
   try {
     const { degree, department } = req.query;
@@ -131,7 +134,7 @@ const getCoursesElective = async(req,res) => {
 const postCoursesElective = async(req,res) => {
   try {
     // console.log(req.body);
-    const { serial_number, course_code, course_title, type, vertical, date, degree, department } = req.body;
+  const { serial_number, course_code, course_title, type, vertical, date, degree, department, faculty } = req.body;
     // console.log("Attempting to fetch courses from Supabase");
     // Check if course code already exists
     const { data: existingCourse, error: checkError } = await supabase
@@ -150,7 +153,7 @@ const postCoursesElective = async(req,res) => {
     const { data, error } = await supabase
       .from("electivebe")
       .insert([
-        { serial_number, course_code, course_title, type, vertical, date, degree, department }
+        { serial_number, course_code, course_title, type, vertical, date, degree, department, faculty: faculty ?? null }
       ])
       .select();
     
@@ -168,11 +171,11 @@ const postCoursesElective = async(req,res) => {
 const putCoursesElective = async(req,res) => {
   try {
     const { code } = req.params;
-    const { serial_number, course_title, type, vertical, date, degree, department } = req.body;
+    const { serial_number, course_title, type, vertical, date, degree, department, faculty } = req.body;
     
     const { data, error } = await supabase
       .from("electivebe")
-      .update({ serial_number, course_title, type, vertical, date, degree, department })
+      .update({ serial_number, course_title, type, vertical, date, degree, department, faculty: faculty ?? null })
       .eq("course_code", code)
       .select();
     
@@ -214,6 +217,191 @@ const deleteCoursesElective = async(req,res) => {
     res.status(500).json({ error: 'Database error' });
   }
 };
+
+const normalizeVerticalArray = (vertical) => {
+  if (vertical === undefined) return undefined;
+  if (vertical === null) return null;
+  if (!Array.isArray(vertical)) return null;
+
+  const parsed = vertical.map((value) => Number(value));
+  if (parsed.some((value) => !Number.isInteger(value))) return null;
+
+  return [...new Set(parsed)];
+};
+
+
+
+
+
+
+
+const getElectiveTypes = async (req, res) => {
+  try {
+    const { degree, department } = req.query;
+
+    let query = supabase.from("electivebe_type").select("*");
+
+    if (degree) query = query.eq("degree", degree);
+    if (department) query = query.eq("department", department);
+
+    query = query.order("created_at", { ascending: true });
+
+    const { data, error } = await query;
+    if (error) return res.status(400).json({ error: error.message });
+
+    res.json(data);
+  } catch (err) {
+    console.error("Error fetching elective types:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+};
+
+const postElectiveType = async (req, res) => {
+  try {
+    const { degree, department, name, vertical } = req.body;
+
+    if (!degree || !department || !name) {
+      return res.status(400).json({ error: "degree, department, and name are required" });
+    }
+
+    const normalizedVertical = normalizeVerticalArray(vertical);
+    if (vertical !== undefined && normalizedVertical === null) {
+      return res.status(400).json({ error: "vertical must be an integer array" });
+    }
+
+    const { data, error } = await supabase
+      .from("electivebe_type")
+      .insert([{
+        degree,
+        department,
+        name,
+        vertical: normalizedVertical === undefined ? [] : normalizedVertical
+      }])
+      .select();
+
+    if (error) return res.status(400).json({ error: error.message });
+
+    res.status(201).json(data[0]);
+  } catch (err) {
+    console.error("Error creating elective type:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+};
+
+const putElectiveType = async (req, res) => {
+  try {
+    const {
+      old_degree,
+      old_department,
+      old_name,
+      degree,
+      department,
+      name,
+      vertical
+    } = req.body;
+
+    if (!old_degree || !old_department || !old_name) {
+      return res.status(400).json({ error: "old_degree, old_department, old_name are required" });
+    }
+
+    const normalizedVertical = normalizeVerticalArray(vertical);
+    if (vertical !== undefined && normalizedVertical === null) {
+      return res.status(400).json({ error: "vertical must be an integer array" });
+    }
+
+    const updated = {
+      degree: degree ?? old_degree,
+      department: department ?? old_department,
+      name: name ?? old_name,
+      ...(normalizedVertical !== undefined ? { vertical: normalizedVertical } : {})
+    };
+
+    const { data, error } = await supabase
+      .from("electivebe_type")
+      .update(updated)
+      .eq("degree", old_degree)
+      .eq("department", old_department)
+      .eq("name", old_name)
+      .select();
+
+    if (error) return res.status(400).json({ error: error.message });
+    if (!data.length) return res.status(404).json({ error: "Elective type not found" });
+
+    res.json(data[0]);
+  } catch (err) {
+    console.error("Error updating elective type:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+};
+
+const deleteElectiveType = async (req, res) => {
+  try {
+    const { degree, department, name, vertical } = req.body;
+
+    if (!degree || !department || !name) {
+      return res.status(400).json({ error: "degree, department, and name are required" });
+    }
+
+    if (vertical !== undefined) {
+      const normalizedVertical = normalizeVerticalArray(vertical);
+      if (normalizedVertical === null) {
+        return res.status(400).json({ error: "vertical must be an integer array" });
+      }
+
+      const { data: existing, error: fetchError } = await supabase
+        .from("electivebe_type")
+        .select("*")
+        .eq("degree", degree)
+        .eq("department", department)
+        .eq("name", name)
+        .single();
+
+      if (fetchError) return res.status(404).json({ error: "Elective type not found" });
+
+      const remainingVerticals = (existing.vertical || []).filter(
+        (value) => !normalizedVertical.includes(value)
+      );
+
+      const { data: updatedData, error: updateError } = await supabase
+        .from("electivebe_type")
+        .update({ vertical: remainingVerticals })
+        .eq("degree", degree)
+        .eq("department", department)
+        .eq("name", name)
+        .select();
+
+      if (updateError) return res.status(400).json({ error: updateError.message });
+      return res.json({
+        message: "Verticals removed successfully",
+        data: updatedData[0]
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("electivebe_type")
+      .delete()
+      .eq("degree", degree)
+      .eq("department", department)
+      .eq("name", name)
+      .select();
+
+    if (error) return res.status(400).json({ error: error.message });
+    if (!data.length) return res.status(404).json({ error: "Elective type not found" });
+
+    res.json({ message: "Elective type deleted successfully" });
+  } catch (err) {
+    console.error("Error deleting elective type:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+};
+
+
+
+
+
+
+
+
 
 // New functions for managing verticals
 const getVerticals = async(req, res) => {
@@ -267,10 +455,18 @@ const getVerticals = async(req, res) => {
 const getVertical = async(req, res) => {
   try {
     const { id } = req.params;
+    const { degree, department } = req.query;
+
+    if (!degree || !department) {
+      return res.status(400).json({ error: "degree and department are required" });
+    }
+
     const { data, error } = await supabase
       .from("verticals")
       .select("*")
       .eq("id", id)
+      .eq("degree", degree)
+      .eq("department", department)
       .single();
     
     if (error) {
@@ -393,11 +589,19 @@ module.exports = {
     updateProfessional,
     getProfessional,
 
+
+
     getCoursesElectiveAll,
     getCoursesElective,
     postCoursesElective,
     putCoursesElective,
     deleteCoursesElective,
+
+    getElectiveTypes,
+    postElectiveType,
+    putElectiveType,
+    deleteElectiveType,
+
     getVerticals,
     getVertical,
     postVertical,

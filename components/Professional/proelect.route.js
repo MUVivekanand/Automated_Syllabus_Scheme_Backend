@@ -11,6 +11,10 @@ const {
     postCoursesElective,
     putCoursesElective,
     deleteCoursesElective,
+    getElectiveTypes,
+    postElectiveType,
+    putElectiveType,
+    deleteElectiveType,
     getVerticals,
     getVertical,
     postVertical,
@@ -25,11 +29,18 @@ router.get("/getproelective", getProfessional);
 router.post("/postelective", insertProfessional);
 router.put("/updateelective", updateProfessional);
 
+
+//B.E
 router.get("/courses", getCoursesElectiveAll);
 router.get("/courses/:code", getCoursesElective);
 router.post("/courses", postCoursesElective);
 router.put("/courses/:code", putCoursesElective);
 router.delete("/courses/:code", deleteCoursesElective);
+
+router.get("/types", getElectiveTypes);
+router.post("/types", postElectiveType);
+router.put("/types", putElectiveType);
+router.delete("/types", deleteElectiveType);
 
 router.get('/verticals', getVerticals);
 router.get('/verticals/:id', getVertical);
