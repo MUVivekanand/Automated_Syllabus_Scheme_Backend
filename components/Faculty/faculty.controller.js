@@ -466,10 +466,22 @@ const addMapping = async (req, res) => {
 
 const getAllMappings = async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { degree, department } = req.query;
+
+    let query = supabase
       .from("mapping")
       .select("*")
       .order("course_code", { ascending: true });
+
+    if (degree) {
+      query = query.eq("degree", degree);
+    }
+
+    if (department) {
+      query = query.eq("department", department);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
