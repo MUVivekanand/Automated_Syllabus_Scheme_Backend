@@ -158,6 +158,8 @@ const updateCourseDetails = async (req, res) => {
       });
     }
 
+    await supabase.rpc("reset_textbooks_sequence");
+
     // Insert new textbooks with fresh sequential IDs starting from 1
     if (Array.isArray(textbooks) && textbooks.length > 0) {
       const textbookData = textbooks.map((t) => ({
@@ -174,7 +176,8 @@ const updateCourseDetails = async (req, res) => {
 
       const { error: textbookError } = await supabase
         .from("textbooks")
-        .insert(textbookData);
+        .insert(textbookData)
+        .select();
       
       if (textbookError) {
         console.error("❌ Error inserting textbooks:", textbookError);
@@ -202,6 +205,8 @@ const updateCourseDetails = async (req, res) => {
       });
     }
 
+    await supabase.rpc("reset_refs_sequence");
+    
     // Insert new references with fresh sequential IDs starting from 1
     if (Array.isArray(references) && references.length > 0) {
       const referenceData = references.map((r) => ({
@@ -215,10 +220,11 @@ const updateCourseDetails = async (req, res) => {
         place: r.place || null,
         year: r.year || null,
       }));
-
+      
       const { error: referenceError } = await supabase
         .from("refs")
-        .insert(referenceData);
+        .insert(referenceData)
+        .select();
       
       if (referenceError) {
         console.error("❌ Error inserting references:", referenceError);
