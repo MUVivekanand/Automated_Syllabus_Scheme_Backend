@@ -489,8 +489,67 @@ const getAllMappings = async (req, res) => {
   }
 };
 
+const updateLabCourseDetails = async (req, res) => {
+  try {
+    const {
+      courseName,
+      degree,
+      department,
+      description,
+    } = req.body;
+
+    //Check if record exists
+    const { data: existingLab, error: fetchError } = await supabase
+      .from("labcourse_details")
+      .select("course_name")
+      .eq("course_name", courseName)
+      .eq("degree", degree)
+      .eq("department", department);
+
+    if (fetchError) {
+      console.error("❌ Fetch error:", fetchError);
+      return res
+        .status(500)
+        .json({ success: false, error: fetchError.message });
+    }
+
+    //UPDATE
+    if (existingLab.length > 0) {
+      const { error: updateError } = await supabase
+        .from("labcourse_details")
+        .update({
+          description: description || null,
+        })
+        .eq("course_name", courseName)
+        .eq("degree", degree)
+        .eq("department", department);
+
+      if (updateError) throw updateError;
+    } 
+    //INSERT
+    else {
+      const { error: insertError } = await supabase
+        .from("labcourse_details")
+        .insert({
+          course_name: courseName,
+          degree: degree,
+          department: department,
+          description: description || null,
+        });
+
+      if (insertError) throw insertError;
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ Server Error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
 module.exports = {
   updateCourseDetails,
+  updateLabCourseDetails,
   getCourse,
   getCourseDetails,
   addMapping,
